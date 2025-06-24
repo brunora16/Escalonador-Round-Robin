@@ -39,6 +39,7 @@ int main() {
                 tempoIO = 0; 
                 break;
         }
+
         int tempoChegada = (i == 0) ? 0 : rand() % 20;
         int tempoInicioIO = (necessidadeIO != 'D') ? tempoChegada + 2 + (rand() % 4) : 0;
 
@@ -50,6 +51,6 @@ int main() {
 
     fclose(f);
     printf("Processos gerados com sucesso!\n");
-    
+
     return 0;
 }

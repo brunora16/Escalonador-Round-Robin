@@ -6,7 +6,7 @@
 
 #define quantum 3
 #define MAX_PROCESSOS 5
-#define LIMITE_ESPERA 5
+#define LIMITE_ESPERA 10
 #define ALTA 1
 #define BAIXA 0
 
@@ -22,6 +22,8 @@ typedef struct processo{
     int tempoIO;
     int tempoInicioIO; 
     int tempoEspera;
+    int turnaround;
+    int tempoChegadaOriginal;
     struct processo* prox;
 } Processo;
 
@@ -199,12 +201,12 @@ void mostrarFilas(FilaProcessos *fp, Fila *filaIO, int tempo) {
     }
     printf("NULL\n");
 
-    printf("  FILA DE I/O:\n");
+    printf("  FILA DE I/O: ");
 
     p = filaIO->ini;
 
     while (p != NULL) {
-        printf("PID %d | Tipo I/O: %c | Retorno previsto: t=%d\n", p->PID, p->necessidadeIO, p->tempoChegada);
+        printf("  PID %d | Tipo I/O: %c | Retorno previsto: t=%d\n", p->PID, p->necessidadeIO, p->tempoChegada);
         p = p->prox;
     }
 
@@ -213,7 +215,8 @@ void mostrarFilas(FilaProcessos *fp, Fila *filaIO, int tempo) {
     printf("------------------------------------------------------------\n");
 }
 
-void escalonador(FilaProcessos *fp, Processo *listaProcessos, int qntdProcessos) {
+
+void escalonador(FilaProcessos *fp, Processo *listaProcessos, int qntdProcessos, int *tempoOciosoCPU) {
     int tempo = 0;
     int proximo = 0;
     int processosRestantes = qntdProcessos;
@@ -255,6 +258,7 @@ void escalonador(FilaProcessos *fp, Processo *listaProcessos, int qntdProcessos)
         // 5. Se não há processos prontos, avança o tempo
         if (fp_vazia(fp)) {
             tempo++;
+            (*tempoOciosoCPU)++;
             continue;
         }
 
@@ -277,12 +281,13 @@ void escalonador(FilaProcessos *fp, Processo *listaProcessos, int qntdProcessos)
         p->tempoServico -= tempoExec;
 
         // Decide o destino após execução
-        if (p->necessidadeIO != 'D' && tempo + tempoExec >= p->tempoInicioIO && p->tempoServico > 0) {
+        if (p->necessidadeIO != 'D' && p->tempoInicioIO != -1 && tempo + tempoExec >= p->tempoInicioIO && p->tempoServico > 0) {
             // Simula envio para I/O
             p->status = 1;
             p->tempoChegada = tempo + tempoExec + p->tempoIO;
             enqueue(filaIO, p);
             printf("Processo %d foi para I/O (%c), retorna em t=%d\n", p->PID, p->necessidadeIO, p->tempoChegada);
+            p->tempoInicioIO = -1;
         }
         else if (p->tempoServico > 0) {
             p->status = 2; // Preempção
@@ -293,9 +298,10 @@ void escalonador(FilaProcessos *fp, Processo *listaProcessos, int qntdProcessos)
                    p->PID, p->prioridade == ALTA ? "ALTA" : "BAIXA");
         }
         else {
-            p->status = 3;
+            p->status = 3; // Finalizado
             processosRestantes--;
             printf("Processo %d FINALIZADO\n", p->PID);
+            p->turnaround = tempo - p->tempoChegadaOriginal;
         }
 
         tempo += tempoExec;
@@ -317,7 +323,7 @@ Processo* lerProcessosArquivos(char* arquivo, int qntd){
         exit(1);
     }
 
-        for (int i = 0; i < qntd; i++) {
+    for (int i = 0; i < qntd; i++) {
         fscanf(f, "%d %d %d %d %d %d %c %d %d %d",
             &arrayProcessos[i].PID,
             &arrayProcessos[i].tempoChegada,
@@ -330,9 +336,11 @@ Processo* lerProcessosArquivos(char* arquivo, int qntd){
             &arrayProcessos[i].tempoInicioIO,
             &arrayProcessos[i].tempoEspera
         );
+        arrayProcessos[i].turnaround = 0;
+        arrayProcessos[i].tempoChegadaOriginal = arrayProcessos[i].tempoChegada;
         arrayProcessos[i].prox = NULL;
     }
-
+    
     fclose(f);
     return arrayProcessos;
 }
@@ -344,7 +352,16 @@ void swap(Processo *a, Processo *b){
     *a = temp;
 }
 
-void bubbleSort(Processo *array, int tamanho) {
+void bubbleSortPID(Processo *array, int tamanho) {
+    for (int i = 0; i < tamanho - 1; i++) {
+        for (int j = 0; j < tamanho - 1 - i; j++) {
+            if(array[j].PID > array[j+1].PID) 
+                swap(&array[j], &array[j+1]);  
+        }
+    }
+}
+
+void bubbleSortNovos(Processo *array, int tamanho) {
     for (int i = 0; i < tamanho - 1; i++) {
         for (int j = 0; j < tamanho - 1 - i; j++) {
             if(
@@ -357,10 +374,30 @@ void bubbleSort(Processo *array, int tamanho) {
     }
 }
 
+void printarTurnaround(Processo* arrayProcessos, int qntdProcessos, int* tempoOciosoCPU){
+
+    bubbleSortPID(arrayProcessos, qntdProcessos);
+    // Imprime o turnaround de cada processo
+    printf("\n\n------------------------------------------------------------\n");
+    printf("===== TURNAROND DOS PROCESSOS =====\n");
+    printf("------------------------------------------------------------\n");
+
+    for(int aux = 0; aux < qntdProcessos; aux++){
+
+        printf("O turnaround do processo de PID %d foi: %d unidades de tempo.\n", 
+            arrayProcessos[aux].PID, 
+            arrayProcessos[aux].turnaround);
+    }
+
+    printf("============================================================");
+    printf("\nA CPU ficou ociosa por %d unidades de tempo.\n", *tempoOciosoCPU);
+    printf("============================================================");
+}
+
 int main() {
     int qntdProcessos = 5;
     srand(time(NULL)); // Semente para gerar números aleatórios diferentes a cada execução
-
+    
     if (qntdProcessos > MAX_PROCESSOS) {
         printf("Erro: número de processos excede o limite (%d).\n", MAX_PROCESSOS);
         return 1;
@@ -368,7 +405,7 @@ int main() {
 
     // Criação dos processos
     Processo *arrayProcessos = lerProcessosArquivos("processos.txt", qntdProcessos);
-    bubbleSort(arrayProcessos, qntdProcessos); // Ordena por tempo de chegada
+    bubbleSortNovos(arrayProcessos, qntdProcessos); // Ordena por tempo de chegada
 
     // Exibição das informações iniciais
     printf("===== PROCESSOS CRIADOS =====\n");
@@ -391,8 +428,12 @@ int main() {
     FilaProcessos *fp = (FilaProcessos*) malloc(sizeof(FilaProcessos));
     initFilaProcessos(fp);
 
+    int tempoOciosoCPU = 0;
     // Chama o escalonador
-    escalonador(fp, arrayProcessos, qntdProcessos);
+    escalonador(fp, arrayProcessos, qntdProcessos, &tempoOciosoCPU);
+
+    // Printa o turnaround
+    printarTurnaround(arrayProcessos, qntdProcessos, &tempoOciosoCPU);
 
     // Libera memória
     liberarFilaProcessos(fp);
