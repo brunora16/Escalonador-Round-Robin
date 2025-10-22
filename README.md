@@ -1,4 +1,4 @@
-# Escalonador de Processos com Feedback
+# Escalonador de Processos Round Robin com Feedback
 
 Este projeto simula um escalonador de processos com duas filas de prioridade (alta e baixa), aging (feedback), e suporte a operações de I/O. O objetivo é estudar políticas de escalonamento, preempção, aging e o impacto de operações de entrada/saída no tempo de turnaround dos processos.
 
